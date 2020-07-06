@@ -24,6 +24,7 @@
 
 module GHC.Hs.Pat (
         Pat(..), LPat,
+        ApiAnnSumPat(..),
         ConPatTc (..),
         CoPat (..),
         ListPatTc(..),
@@ -46,7 +47,8 @@ module GHC.Hs.Pat (
 
         collectEvVarsPat, collectEvVarsPats,
 
-        pprParendLPat, pprConArgs
+        pprParendLPat, pprConArgs,
+        pprLPat
     ) where
 
 import GHC.Prelude
@@ -91,46 +93,56 @@ type instance XWildPat GhcRn = NoExtField
 type instance XWildPat GhcTc = Type
 
 type instance XVarPat  (GhcPass _) = NoExtField
-type instance XLazyPat (GhcPass _) = NoExtField
-type instance XAsPat   (GhcPass _) = NoExtField
-type instance XParPat  (GhcPass _) = NoExtField
-type instance XBangPat (GhcPass _) = NoExtField
+
+type instance XLazyPat GhcPs = ApiAnn -- For '~'
+type instance XLazyPat GhcRn = NoExtField
+type instance XLazyPat GhcTc = NoExtField
+
+type instance XAsPat   GhcPs = ApiAnn -- For '@'
+type instance XAsPat   GhcRn = NoExtField
+type instance XAsPat   GhcTc = NoExtField
+
+type instance XParPat  (GhcPass _) = ApiAnn' AnnParen
+
+type instance XBangPat GhcPs = ApiAnn -- For '!'
+type instance XBangPat GhcRn = NoExtField
+type instance XBangPat GhcTc = NoExtField
 
 -- Note: XListPat cannot be extended when using GHC 8.0.2 as the bootstrap
 -- compiler, as it triggers https://gitlab.haskell.org/ghc/ghc/issues/14396 for
 -- `SyntaxExpr`
-type instance XListPat GhcPs = NoExtField
+type instance XListPat GhcPs = ApiAnn' AnnList
 type instance XListPat GhcRn = Maybe (SyntaxExpr GhcRn)
 type instance XListPat GhcTc = ListPatTc
 
-type instance XTuplePat GhcPs = NoExtField
+type instance XTuplePat GhcPs = ApiAnn
 type instance XTuplePat GhcRn = NoExtField
 type instance XTuplePat GhcTc = [Type]
 
-type instance XConPat GhcPs = NoExtField
-type instance XConPat GhcRn = NoExtField
-type instance XConPat GhcTc = ConPatTc
-
-type instance XSumPat GhcPs = NoExtField
+type instance XSumPat GhcPs = ApiAnn' ApiAnnSumPat
 type instance XSumPat GhcRn = NoExtField
 type instance XSumPat GhcTc = [Type]
 
-type instance XViewPat GhcPs = NoExtField
+type instance XConPat GhcPs = ApiAnn
+type instance XConPat GhcRn = NoExtField
+type instance XConPat GhcTc = ConPatTc
+
+type instance XViewPat GhcPs = ApiAnn
 type instance XViewPat GhcRn = NoExtField
 type instance XViewPat GhcTc = Type
 
 type instance XSplicePat (GhcPass _) = NoExtField
 type instance XLitPat    (GhcPass _) = NoExtField
 
-type instance XNPat GhcPs = NoExtField
-type instance XNPat GhcRn = NoExtField
+type instance XNPat GhcPs = ApiAnn
+type instance XNPat GhcRn = ApiAnn
 type instance XNPat GhcTc = Type
 
-type instance XNPlusKPat GhcPs = NoExtField
+type instance XNPlusKPat GhcPs = ApiAnn
 type instance XNPlusKPat GhcRn = NoExtField
 type instance XNPlusKPat GhcTc = Type
 
-type instance XSigPat GhcPs = NoExtField
+type instance XSigPat GhcPs = ApiAnn
 type instance XSigPat GhcRn = NoExtField
 type instance XSigPat GhcTc = Type
 
@@ -142,6 +154,18 @@ type instance XXPat GhcTc = CoPat
 type instance ConLikeP GhcPs = RdrName -- IdP GhcPs
 type instance ConLikeP GhcRn = Name    -- IdP GhcRn
 type instance ConLikeP GhcTc = ConLike
+
+type instance Anno ConLike = SrcSpanAnnName
+
+-- ---------------------------------------------------------------------
+
+-- API Annotations types
+
+data ApiAnnSumPat = ApiAnnSumPat
+      { sumPatParens      :: [AddApiAnn]
+      , sumPatVbarsBefore :: [RealSrcSpan]
+      , sumPatVbarsAfter  :: [RealSrcSpan]
+      } deriving Data
 
 -- ---------------------------------------------------------------------
 
@@ -212,8 +236,12 @@ hsRecUpdFieldOcc = fmap unambiguousFieldOcc . hsRecFieldLbl
 ************************************************************************
 -}
 
-instance OutputableBndrId p => Outputable (Pat (GhcPass p)) where
+instance (OutputableBndrId p)
+    => Outputable (Pat (GhcPass p)) where
     ppr = pprPat
+
+pprLPat :: (OutputableBndrId p) => LPat (GhcPass p) -> SDoc
+pprLPat (L _ e) = pprPat e
 
 -- | Print with type info if -dppr-debug is on
 pprPatBndr :: OutputableBndr name => name -> SDoc
@@ -227,7 +255,7 @@ pprParendLPat :: (OutputableBndrId p)
               => PprPrec -> LPat (GhcPass p) -> SDoc
 pprParendLPat p = pprParendPat p . unLoc
 
-pprParendPat :: forall p. OutputableBndrId p
+pprParendPat :: forall p. (OutputableBndrId p)
              => PprPrec
              -> Pat (GhcPass p)
              -> SDoc
@@ -249,7 +277,8 @@ pprParendPat p pat = sdocOption sdocPrintTypecheckerElaboration $ \ print_tc_ela
       -- But otherwise the CoPat is discarded, so it
       -- is the pattern inside that matters.  Sigh.
 
-pprPat :: forall p. (OutputableBndrId p) => Pat (GhcPass p) -> SDoc
+pprPat :: forall p. (OutputableBndrId p)
+       => Pat (GhcPass p) -> SDoc
 pprPat (VarPat _ lvar)          = pprPatBndr (unLoc lvar)
 pprPat (WildPat _)              = char '_'
 pprPat (LazyPat _ pat)          = char '~' <> pprParendLPat appPrec pat
@@ -261,13 +290,13 @@ pprPat (ParPat _ pat)           = parens (ppr pat)
 pprPat (LitPat _ s)             = ppr s
 pprPat (NPat _ l Nothing  _)    = ppr l
 pprPat (NPat _ l (Just _) _)    = char '-' <> ppr l
-pprPat (NPlusKPat _ n k _ _ _)  = hcat [ppr n, char '+', ppr k]
+pprPat (NPlusKPat _ n k _ _ _)  = hcat [ppr_n, char '+', ppr k]
+  where ppr_n = case ghcPass @p of
+                  GhcPs -> ppr n
+                  GhcRn -> ppr n
+                  GhcTc -> ppr n
 pprPat (SplicePat _ splice)     = pprSplice splice
-pprPat (SigPat _ pat ty)        = ppr pat <+> dcolon <+> ppr_ty
-  where ppr_ty = case ghcPass @p of
-                   GhcPs -> ppr ty
-                   GhcRn -> ppr ty
-                   GhcTc -> ppr ty
+pprPat (SigPat _ pat ty)        = ppr pat <+> dcolon <+> ppr ty
 pprPat (ListPat _ pats)         = brackets (interpp'SP pats)
 pprPat (TuplePat _ pats bx)
     -- Special-case unary boxed tuples so that they are pretty-printed as
@@ -284,10 +313,10 @@ pprPat (ConPat { pat_con = con
                }
        )
   = case ghcPass @p of
-      GhcPs -> regular
-      GhcRn -> regular
+      GhcPs -> pprUserCon (unLoc con) details
+      GhcRn -> pprUserCon (unLoc con) details
       GhcTc -> sdocOption sdocPrintTypecheckerElaboration $ \case
-        False -> regular
+        False -> pprUserCon (unLoc con) details
         True  ->
           -- Tiresome; in 'GHC.Tc.Gen.Bind.tcRhs' we print out a typechecked Pat in an
           -- error message, and we want to make sure it prints nicely
@@ -299,9 +328,6 @@ pprPat (ConPat { pat_con = con
                        , cpt_dicts = dicts
                        , cpt_binds = binds
                        } = ext
-  where
-    regular :: OutputableBndr (ConLikeP (GhcPass p)) => SDoc
-    regular = pprUserCon (unLoc con) details
 pprPat (XPat ext) = case ghcPass @p of
 #if __GLASGOW_HASKELL__ < 811
   GhcPs -> noExtCon ext
@@ -313,13 +339,14 @@ pprPat (XPat ext) = case ghcPass @p of
       else pprPat pat
     where CoPat co pat _ = ext
 
-pprUserCon :: (OutputableBndr con, OutputableBndrId p)
+pprUserCon :: (OutputableBndr con, OutputableBndrId p,
+                     Outputable (Anno (IdGhcP p)))
            => con -> HsConPatDetails (GhcPass p) -> SDoc
 pprUserCon c (InfixCon p1 p2) = ppr p1 <+> pprInfixOcc c <+> ppr p2
 pprUserCon c details          = pprPrefixOcc c <+> pprConArgs details
 
-
-pprConArgs :: (OutputableBndrId p)
+pprConArgs :: (OutputableBndrId p,
+                     Outputable (Anno (IdGhcP p)))
            => HsConPatDetails (GhcPass p) -> SDoc
 pprConArgs (PrefixCon ts pats) = fsep (pprTyArgs ts : map (pprParendLPat appPrec) pats)
   where pprTyArgs tyargs = fsep (map (\ty -> char '@' <> ppr ty) tyargs)
@@ -339,23 +366,23 @@ mkPrefixConPat :: DataCon ->
                   [LPat GhcTc] -> [Type] -> LPat GhcTc
 -- Make a vanilla Prefix constructor pattern
 mkPrefixConPat dc pats tys
-  = noLoc $ ConPat { pat_con = noLoc (RealDataCon dc)
-                   , pat_args = PrefixCon [] pats
-                   , pat_con_ext = ConPatTc
-                     { cpt_tvs = []
-                     , cpt_dicts = []
-                     , cpt_binds = emptyTcEvBinds
-                     , cpt_arg_tys = tys
-                     , cpt_wrap = idHsWrapper
-                     }
-                   }
+  = noLocA $ ConPat { pat_con = noLocA (RealDataCon dc)
+                    , pat_args = PrefixCon [] pats
+                    , pat_con_ext = ConPatTc
+                      { cpt_tvs = []
+                      , cpt_dicts = []
+                      , cpt_binds = emptyTcEvBinds
+                      , cpt_arg_tys = tys
+                      , cpt_wrap = idHsWrapper
+                      }
+                    }
 
 mkNilPat :: Type -> LPat GhcTc
 mkNilPat ty = mkPrefixConPat nilDataCon [] [ty]
 
 mkCharLitPat :: SourceText -> Char -> LPat GhcTc
 mkCharLitPat src c = mkPrefixConPat charDataCon
-                          [noLoc $ LitPat noExtField (HsCharPrim src c)] []
+                          [noLocA $ LitPat noExtField (HsCharPrim src c)] []
 
 {-
 ************************************************************************
@@ -572,7 +599,7 @@ parenthesizePat :: IsPass p
                 -> LPat (GhcPass p)
                 -> LPat (GhcPass p)
 parenthesizePat p lpat@(L loc pat)
-  | patNeedsParens p pat = L loc (ParPat noExtField lpat)
+  | patNeedsParens p pat = L loc (ParPat noAnn lpat)
   | otherwise            = lpat
 
 {-

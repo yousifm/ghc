@@ -34,6 +34,7 @@ import {-# SOURCE #-} GHC.Hs.Expr ( pprExpr, pprFunBind, pprPatBind )
 
 import Language.Haskell.Syntax.Extension
 import GHC.Hs.Extension
+import GHC.Parser.Annotation
 import GHC.Hs.Type
 import GHC.Tc.Types.Evidence
 import GHC.Core.Type
@@ -44,6 +45,8 @@ import GHC.Types.SrcLoc as SrcLoc
 import GHC.Data.Bag
 import GHC.Data.FastString
 import GHC.Data.BooleanFormula (LBooleanFormula)
+import GHC.Types.Name.Reader
+import GHC.Types.Name
 
 import GHC.Utils.Outputable
 import GHC.Utils.Panic
@@ -64,8 +67,8 @@ Global bindings (where clauses)
 -- the ...LR datatypes are parametrized by two id types,
 -- one for the left and one for the right.
 
-type instance XHsValBinds      (GhcPass pL) (GhcPass pR) = NoExtField
-type instance XHsIPBinds       (GhcPass pL) (GhcPass pR) = NoExtField
+type instance XHsValBinds      (GhcPass pL) (GhcPass pR) = ApiAnn' AnnList
+type instance XHsIPBinds       (GhcPass pL) (GhcPass pR) = ApiAnn' AnnList
 type instance XEmptyLocalBinds (GhcPass pL) (GhcPass pR) = NoExtField
 type instance XXHsLocalBindsLR (GhcPass pL) (GhcPass pR) = NoExtCon
 
@@ -78,7 +81,7 @@ data NHsValBindsLR idL
       [(RecFlag, LHsBinds idL)]
       [LSig GhcRn]
 
-type instance XValBinds    (GhcPass pL) (GhcPass pR) = NoExtField
+type instance XValBinds    (GhcPass pL) (GhcPass pR) = AnnSortKey
 type instance XXValBindsLR (GhcPass pL) (GhcPass pR)
             = NHsValBindsLR (GhcPass pL)
 
@@ -88,7 +91,7 @@ type instance XFunBind    (GhcPass pL) GhcPs = NoExtField
 type instance XFunBind    (GhcPass pL) GhcRn = NameSet    -- Free variables
 type instance XFunBind    (GhcPass pL) GhcTc = HsWrapper  -- See comments on FunBind.fun_ext
 
-type instance XPatBind    GhcPs (GhcPass pR) = NoExtField
+type instance XPatBind    GhcPs (GhcPass pR) = ApiAnn
 type instance XPatBind    GhcRn (GhcPass pR) = NameSet -- Free variables
 type instance XPatBind    GhcTc (GhcPass pR) = Type    -- Type of the GRHSs
 
@@ -381,8 +384,8 @@ pprLHsBindsForUser binds sigs
   where
 
     decls :: [(SrcSpan, SDoc)]
-    decls = [(loc, ppr sig)  | L loc sig <- sigs] ++
-            [(loc, ppr bind) | L loc bind <- bagToList binds]
+    decls = [(locA loc, ppr sig)  | L loc sig <- sigs] ++
+            [(locA loc, ppr bind) | L loc bind <- bagToList binds]
 
     sort_by_loc decls = sortBy (SrcLoc.leftmost_smallest `on` fst) decls
 
@@ -410,7 +413,7 @@ isEmptyValBinds (ValBinds _ ds sigs)  = isEmptyLHsBinds ds && null sigs
 isEmptyValBinds (XValBindsLR (NValBinds ds sigs)) = null ds && null sigs
 
 emptyValBindsIn, emptyValBindsOut :: HsValBindsLR (GhcPass a) (GhcPass b)
-emptyValBindsIn  = ValBinds noExtField emptyBag []
+emptyValBindsIn  = ValBinds NoAnnSortKey emptyBag []
 emptyValBindsOut = XValBindsLR (NValBinds [] [])
 
 emptyLHsBinds :: LHsBindsLR (GhcPass idL) idR
@@ -423,7 +426,7 @@ isEmptyLHsBinds = isEmptyBag
 plusHsValBinds :: HsValBinds (GhcPass a) -> HsValBinds (GhcPass a)
                -> HsValBinds(GhcPass a)
 plusHsValBinds (ValBinds _ ds1 sigs1) (ValBinds _ ds2 sigs2)
-  = ValBinds noExtField (ds1 `unionBags` ds2) (sigs1 ++ sigs2)
+  = ValBinds NoAnnSortKey (ds1 `unionBags` ds2) (sigs1 ++ sigs2)
 plusHsValBinds (XValBindsLR (NValBinds ds1 sigs1))
                (XValBindsLR (NValBinds ds2 sigs2))
   = XValBindsLR (NValBinds (ds1 ++ ds2) (sigs1 ++ sigs2))
@@ -477,21 +480,35 @@ instance OutputableBndrId p => Outputable (ABExport (GhcPass p)) where
            , nest 2 (pprTcSpecPrags prags)
            , pprIfTc @p $ nest 2 (text "wrap:" <+> ppr wrap) ]
 
-instance (OutputableBndrId l, OutputableBndrId r,
-         Outputable (XXPatSynBind (GhcPass l) (GhcPass r)))
+instance (OutputableBndrId l, OutputableBndrId r)
           => Outputable (PatSynBind (GhcPass l) (GhcPass r)) where
   ppr (PSB{ psb_id = (L _ psyn), psb_args = details, psb_def = pat,
             psb_dir = dir })
       = ppr_lhs <+> ppr_rhs
     where
       ppr_lhs = text "pattern" <+> ppr_details
-      ppr_simple syntax = syntax <+> ppr pat
+      ppr_simple syntax = syntax <+> pprLPat pat
 
       ppr_details = case details of
-          InfixCon v1 v2 -> hsep [ppr v1, pprInfixOcc psyn, ppr v2]
-          PrefixCon _ vs -> hsep (pprPrefixOcc psyn : map ppr vs)
+          InfixCon v1 v2 -> hsep [ppr_v v1, pprInfixOcc psyn, ppr_v  v2]
+            where
+                ppr_v v = case ghcPass @r of
+                    GhcPs -> ppr v
+                    GhcRn -> ppr v
+                    GhcTc -> ppr v
+          PrefixCon _ vs -> hsep (pprPrefixOcc psyn : map ppr_v vs)
+            where
+                ppr_v v = case ghcPass @r of
+                    GhcPs -> ppr v
+                    GhcRn -> ppr v
+                    GhcTc -> ppr v
           RecCon vs      -> pprPrefixOcc psyn
-                            <> braces (sep (punctuate comma (map ppr vs)))
+                            <> braces (sep (punctuate comma (map ppr_v vs)))
+            where
+                ppr_v v = case ghcPass @r of
+                    GhcPs -> ppr v
+                    GhcRn -> ppr v
+                    GhcTc -> ppr v
 
       ppr_rhs = case dir of
           Unidirectional           -> ppr_simple (text "<-")
@@ -574,7 +591,8 @@ type instance XXFixitySig (GhcPass p) = NoExtCon
 instance OutputableBndrId p => Outputable (Sig (GhcPass p)) where
     ppr sig = ppr_sig sig
 
-ppr_sig :: (OutputableBndrId p) => Sig (GhcPass p) -> SDoc
+ppr_sig :: forall p. OutputableBndrId p
+        => Sig (GhcPass p) -> SDoc
 ppr_sig (TypeSig _ vars ty)  = pprVarSig (map unLoc vars) (ppr ty)
 ppr_sig (ClassOpSig _ is_deflt vars ty)
   | is_deflt                 = text "default" <+> pprVarSig (map unLoc vars) (ppr ty)
@@ -598,13 +616,22 @@ ppr_sig (MinimalSig _ src bf)
 ppr_sig (PatSynSig _ names sig_ty)
   = text "pattern" <+> pprVarSig (map unLoc names) (ppr sig_ty)
 ppr_sig (SCCFunSig _ src fn mlabel)
-  = pragSrcBrackets src "{-# SCC" (ppr fn <+> maybe empty ppr mlabel )
+  = pragSrcBrackets src "{-# SCC" (ppr_fn <+> maybe empty ppr mlabel )
+      where
+        ppr_fn = case ghcPass @p of
+          GhcPs -> ppr fn
+          GhcRn -> ppr fn
+          GhcTc -> ppr fn
 ppr_sig (CompleteMatchSig _ src cs mty)
   = pragSrcBrackets src "{-# COMPLETE"
-      ((hsep (punctuate comma (map ppr (unLoc cs))))
+      ((hsep (punctuate comma (map ppr_n (unLoc cs))))
         <+> opt_sig)
   where
     opt_sig = maybe empty ((\t -> dcolon <+> ppr t) . unLoc) mty
+    ppr_n n = case ghcPass @p of
+        GhcPs -> ppr n
+        GhcRn -> ppr n
+        GhcTc -> ppr n
 
 instance OutputableBndrId p
        => Outputable (FixitySig (GhcPass p)) where
@@ -641,5 +668,5 @@ instance Outputable TcSpecPrag where
     = text "SPECIALIZE" <+> pprSpec var (text "<type>") inl
 
 pprMinimalSig :: (OutputableBndr name)
-              => LBooleanFormula (Located name) -> SDoc
+              => LBooleanFormula (GenLocated l name) -> SDoc
 pprMinimalSig (L _ bf) = ppr (fmap unLoc bf)

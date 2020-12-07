@@ -150,3 +150,9 @@ test('T15897',
      makefile_test, ['T15897'])
 
 test('T17572', [], compile_and_run, [''])
+
+test('dynamic-prof', [], compile_and_run, [''])
+
+test('dynamic-prof2', [only_ways(['normal']), extra_run_opts('+RTS -hT --no-automatic-heap-samples')], compile_and_run, [''])
+
+test('dynamic-prof3', [only_ways(['normal']), extra_run_opts('+RTS -hT --no-automatic-heap-samples')], compile_and_run, [''])

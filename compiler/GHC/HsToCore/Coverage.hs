@@ -267,12 +267,13 @@ addTickLHsBinds :: LHsBinds GhcTc -> TM (LHsBinds GhcTc)
 addTickLHsBinds = mapBagM addTickLHsBind
 
 addTickLHsBind :: LHsBind GhcTc -> TM (LHsBind GhcTc)
-addTickLHsBind (L pos bind@(AbsBinds { abs_binds   = binds,
-                                       abs_exports = abs_exports })) =
+addTickLHsBind (L pos (XHsBindsLR bind@(AbsBinds { abs_binds = binds
+                                                 , abs_exports = abs_exports
+                                                 }))) =
   withEnv add_exports $
     withEnv add_inlines $ do
       binds' <- addTickLHsBinds binds
-      return $ L pos $ bind { abs_binds = binds' }
+      return $ L pos $ XHsBindsLR $ bind { abs_binds = binds' }
   where
    -- in AbsBinds, the Id on each binding is not the actual top-level
    -- Id that we are defining, they are related by the abs_exports
@@ -628,8 +629,6 @@ addTickHsExpr (HsBinTick x t0 t1 e) =
 addTickHsExpr (HsPragE x p e) =
         liftM (HsPragE x p) (addTickLHsExpr e)
 addTickHsExpr e@(HsBracket     {})   = return e
-addTickHsExpr e@(HsTcBracketOut  {}) = return e
-addTickHsExpr e@(HsRnBracketOut  {}) = return e
 addTickHsExpr e@(HsSpliceE  {})      = return e
 addTickHsExpr (HsProc x pat cmdtop) =
         liftM2 (HsProc x)

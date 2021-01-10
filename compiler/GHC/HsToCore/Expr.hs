@@ -144,7 +144,7 @@ ds_val_bind (NonRecursive, hsbinds) body
 
             ; dsUnliftedBind bind body }
   where
-    is_polymorphic (AbsBinds { abs_tvs = tvs, abs_ev_vars = evs })
+    is_polymorphic (XHsBindsLR (AbsBinds { abs_tvs = tvs, abs_ev_vars = evs }))
                      = not (null tvs && null evs)
     is_polymorphic _ = False
 
@@ -189,10 +189,10 @@ ds_val_bind (is_rec, binds) body
 
 ------------------
 dsUnliftedBind :: HsBind GhcTc -> CoreExpr -> DsM CoreExpr
-dsUnliftedBind (AbsBinds { abs_tvs = [], abs_ev_vars = []
-               , abs_exports = exports
-               , abs_ev_binds = ev_binds
-               , abs_binds = lbinds }) body
+dsUnliftedBind (XHsBindsLR (AbsBinds { abs_tvs = [], abs_ev_vars = []
+                                     , abs_exports = exports
+                                     , abs_ev_binds = ev_binds
+                                     , abs_binds = lbinds })) body
   = do { let body1 = foldr bind_export body exports
              bind_export export b = bindNonRec (abe_poly export) (Var (abe_mono export)) b
        ; body2 <- foldlM (\body lbind -> dsUnliftedBind (unLoc lbind) body)
@@ -852,8 +852,7 @@ Thus, we pass @r@ as the scrutinee expression to @matchWrapper@ above.
 
 -- Template Haskell stuff
 
-dsExpr (HsRnBracketOut _ _ _)  = panic "dsExpr HsRnBracketOut"
-dsExpr (HsTcBracketOut _ hs_wrapper x ps) = dsBracket hs_wrapper x ps
+dsExpr (HsBracket (HsBracketTc hs_wrapper x ps)) = dsBracket hs_wrapper x ps
 dsExpr (HsSpliceE _ s)         = pprPanic "dsExpr:splice" (ppr s)
 
 -- Arrow notation extension
@@ -879,7 +878,6 @@ dsExpr (HsBinTick _ ixT ixF e) = do
      }
 
 -- HsSyn constructs that just shouldn't be here:
-dsExpr (HsBracket     {})  = panic "dsExpr:HsBracket"
 dsExpr (HsDo          {})  = panic "dsExpr:HsDo"
 
 ds_prag_expr :: HsPragE GhcTc -> LHsExpr GhcTc -> DsM CoreExpr

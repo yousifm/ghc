@@ -1544,8 +1544,9 @@ pprInfo (thing, fixity, cls_insts, fam_insts, docs)
   $$ vcat (map GHC.pprFamInst  fam_insts)
   where
     show_fixity
-        | fixity == GHC.defaultFixity = empty
-        | otherwise                   = ppr fixity <+> pprInfixName (GHC.getName thing)
+        | fixity /= GHC.defaultFixity || isSymOcc (getOccName thing)
+          = ppr fixity <+> pprInfixName (GHC.getName thing)
+        | otherwise = empty
 
 -----------------------------------------------------------------------------
 -- :main
@@ -3254,8 +3255,9 @@ showBindings = do
         $$ show_fixity
       where
         show_fixity
-            | fixity == GHC.defaultFixity  = empty
-            | otherwise                    = ppr fixity <+> ppr (GHC.getName thing)
+            | fixity /= GHC.defaultFixity || isSymOcc (getOccName thing)
+              = ppr fixity <+> ppr (GHC.getName thing)
+            | otherwise = empty
 
 
 printTyThing :: GHC.GhcMonad m => TyThing -> m ()

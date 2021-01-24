@@ -223,7 +223,7 @@ gen_Eq_binds loc tycon tycon_args = do
     no_tag_match_cons = null tag_match_cons
 
     -- (LHS patterns, result)
-    fall_through_eqn :: [([Located (Pat (GhcPass 'Parsed))] , LHsExpr GhcPs)]
+    fall_through_eqn :: [([LPat (GhcPass 'Parsed)] , LHsExpr GhcPs)]
     fall_through_eqn
       | no_tag_match_cons   -- All constructors have arguments
       = case pat_match_cons of

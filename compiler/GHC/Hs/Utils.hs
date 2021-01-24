@@ -1137,7 +1137,7 @@ collectStmtBinders flag = \case
     LastStmt {}      -> []
     ParStmt _ xs _ _ -> collectLStmtsBinders flag [s | ParStmtBlock _ ss _ _ <- xs, s <- ss]
     TransStmt { trS_stmts = stmts } -> collectLStmtsBinders flag stmts
-    RecStmt { recS_stmts = ss }     -> collectLStmtsBinders flag ss
+    RecStmt { recS_stmts = L _ ss } -> collectLStmtsBinders flag ss
     ApplicativeStmt _ args _        -> concatMap collectArgBinders args
         where
          collectArgBinders = \case

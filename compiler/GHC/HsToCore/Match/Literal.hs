@@ -49,7 +49,6 @@ import GHC.Builtin.Types
 import GHC.Builtin.Types.Prim
 import GHC.Types.Literal
 import GHC.Types.SrcLoc
-import Data.Ratio
 import GHC.Utils.Outputable as Outputable
 import GHC.Driver.Session
 import GHC.Utils.Misc
@@ -101,11 +100,9 @@ dsLit l = do
     HsInt64Prim  _ i -> return (Lit (mkLitInt64Wrap i))
     HsWord64Prim _ w -> return (Lit (mkLitWord64Wrap w))
 
-    -- TODO: This shows the same issues as the GHCi cases.
-    -- Leave as future work? Come up with something new?
+    -- This can be slow for very large literals. See Note [FractionalLit representation]
+    -- and #15646
     HsFloatPrim  _ fl -> return (Lit (LitFloat (rationalFromFractionalLit fl)))
-    -- HsFloatPrim  _ f -> return (Lit (LitFloat (fl_value f)))
-    -- HsDoublePrim _ d -> return (Lit (LitDouble (fl_value d)))
     HsDoublePrim _ fl -> return (Lit (LitDouble (rationalFromFractionalLit fl)))
     HsChar _ c       -> return (mkCharExpr c)
     HsString _ str   -> mkStringExprFS str
@@ -143,6 +140,54 @@ The current state of affairs for large literals is:
 * TH might also evaluate the literal even when overloaded.
   But there a user should be able to work around #15646 by
   generating a call to `mkRationalBase10/2` for large literals instead.
+
+
+Note [FractionalLit representation]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+For fractional literals, like 1.3 or 0.79e22, we do /not/ represent
+them within the compiler as a Rational.  Doing so would force the
+compiler to compute a huge Rational for 2.3e300000000000, at compile
+time (#15646)!
+
+So instead we represent fractional literals as a FractionalLit,
+in which we record the significand and exponent separately.  Then
+we can compute the huge Rational at /runtime/, by emitting code
+for
+       mkRationalBase10 2.3 300000000000
+
+where mkRationalBase10 is defined in the library GHC.Real
+
+The moving parts are here:
+
+* Parsing, renaming, typechecking: use FractionalLit, in which the
+  significand and exponent are represented separately.
+
+* Desugaring.  Remember that a fractional literal like 54.4e20 has type
+     Fractional a => a
+
+  - For fractional literals whose type turns out to be Float/Double,
+    we desugar to a Float/Double literal at /compile time/.
+    This conversion can still fail. But this only matters for values
+    too large to be represented as float anyway.  See dsLit in
+    GHC.HsToCore.Match.Literal
+
+  - For fractional literals whose type turns out to be Rational, we
+    desugar the literal to a call of `mkRationalBase10` (etc for hex
+    literals), so that we only compute the Rational at /run time/.  If
+    this value is then demanded at runtime the program might hang or
+    run out of memory. But that is perhaps expected and acceptable.
+    See dsFractionalLitToRational in GHC.HsToCore.Match.Literal
+
+  - For fractional literals whose type isn't one of the above, we just
+    call the typeclass method `fromRational`.  But to do that we need
+    the rational to give to it, and we compute that at runtime, as
+    above.
+
+* Template Haskell might also evaluate the literal even when
+  overloaded.  But there a user should be able to work around #15646
+  by generating a call to `mkRationalBase10/2` for large literals
+  instead.  See XXXX
+
 -}
 
 -- | See Note [FractionalLit representation]
@@ -161,8 +206,7 @@ dsRational (n :% d) = do
   dcn <- dsLookupDataCon ratioDataConName
   let cn = mkIntegerExpr n
   let dn = mkIntegerExpr d
-  t <- mkTyConTy <$> dsLookupTyCon integerTyConName
-  return $ mkCoreConApps dcn [Type t, cn, dn]
+  return $ mkCoreConApps dcn [Type integerTy, cn, dn]
 
 
 dsOverLit :: HsOverLit GhcTc -> DsM CoreExpr

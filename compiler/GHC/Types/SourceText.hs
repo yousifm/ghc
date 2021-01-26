@@ -162,6 +162,12 @@ negateIntegralLit (IL text neg value)
 -- the user wrote, which is important e.g. for floating point numbers that can't represented
 -- as Doubles (we used to via Double for pretty-printing). See also #2245.
 -- Note [FractionalLit representation] in GHC.HsToCore.Match.Literal
+-- The actual value then is: sign * fl_signi * (fl_exp_base^fl_exp)
+--                             where sign = if fl_neg then (-1) else 1
+--
+-- For example FL { fl_neg = True, fl_signi = 5.3, fl_exp = 4, fl_exp_base = Base10 }
+-- denotes  -5300
+
 data FractionalLit = FL
     { fl_text :: SourceText     -- ^ How the value was written in the source
     , fl_neg :: Bool                        -- See Note [Negative zero]
@@ -226,9 +232,12 @@ mkSourceFractionalLit :: String -> Bool -> Integer -> Integer
                       -> FractionalLit
 mkSourceFractionalLit !str !b !r !i !ff = FL (SourceText str) b (r :% 1) i ff
 
--- Note [fractional exponent bases] For hexadecimal rationals of
--- the form 0x0.3p10 the exponent is given on base 2 rather than
--- base 10. These are the only options, hence the sum type. See also #15646.
+{- Note [fractional exponent bases]
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+For hexadecimal rationals of
+the form 0x0.3p10 the exponent is given on base 2 rather than
+base 10. These are the only options, hence the sum type. See also #15646.
+-}
 
 
 -- Comparison operations are needed when grouping literals

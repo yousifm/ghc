@@ -200,7 +200,6 @@ desugarPat x pat = case pat of
     -- short cutting in dsOverLit works properly) is overloaded iff either is.
     dflags <- getDynFlags
     let platform = targetPlatform dflags
-    -- TODO: Need to catch the new RationalLits here
     pm_lit <- case olit of
       OverLit{ ol_val = val, ol_ext = OverLitTc rebindable _ }
         | not rebindable

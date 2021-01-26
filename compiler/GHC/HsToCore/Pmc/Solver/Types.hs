@@ -62,7 +62,7 @@ import GHC.Builtin.Types.Prim
 import GHC.Tc.Solver.Monad (InertSet, emptyInert)
 import GHC.Tc.Utils.TcType (isStringTy)
 import GHC.Types.CompleteMatch (CompleteMatch)
-import GHC.Types.SourceText (FractionalLit, fractionalLitFromRational, rationalFromFractionalLit)
+import GHC.Types.SourceText (FractionalLit, fractionalLitFromRational)
 
 import Numeric (fromRat)
 import Data.Foldable (find)
@@ -617,8 +617,7 @@ instance Outputable PmLitValue where
   ppr (PmLitChar c)       = pprHsChar c
   ppr (PmLitString s)     = pprHsString s
   ppr (PmLitOverInt n i)  = minuses n (ppr i)
-  -- TODO: Large rationals probably shouldn't go through fromRat
-  ppr (PmLitOverRat n r)  = minuses n (ppr (double (fromRat $ rationalFromFractionalLit r)))
+  ppr (PmLitOverRat n r)  = minuses n (ppr r)
   ppr (PmLitOverString s) = pprHsString s
 
 -- Take care of negated literals

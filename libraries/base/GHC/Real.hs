@@ -823,8 +823,5 @@ mkRationalBase10 r e = mkRationalWithExponentBase r e Base10
 mkRationalWithExponentBase :: Rational -> Integer
                            -> FractionalExponentBase -> Rational
 mkRationalWithExponentBase r e feb = r * (eb ^^ e)
+  -- See Note [fractional exponent bases] for why only these bases.
   where eb = case feb of Base2 -> 2 ; Base10 -> 10
-
--- Note [fractional exponent bases] For hexadecimal rationals of
--- the form 0x0.3p10 the exponent is given on base 2 rather than
--- base 10. These are the only options, hence the sum type. See also #15646.

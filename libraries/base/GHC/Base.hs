@@ -1560,8 +1560,15 @@ getTag x = dataToTag# x
 -- Definitions of the boxed PrimOps; these will be
 -- used in the case of partial applications, etc.
 
+-- The following INLINE pragmas make sure we first inline the `...Int`
+-- wrapper in all call sites and only then decide whether to inline the
+-- `...Int#` workers.
 {-# INLINE quotInt #-}
 {-# INLINE remInt #-}
+{-# INLINE divInt #-}
+{-# INLINE modInt #-}
+{-# INLINE quotRemInt #-}
+{-# INLINE divModInt #-}
 
 quotInt, remInt, divInt, modInt :: Int -> Int -> Int
 (I# x) `quotInt`  (I# y) = I# (x `quotInt#` y)

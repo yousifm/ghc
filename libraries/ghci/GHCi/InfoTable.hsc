@@ -381,7 +381,9 @@ newExecConItbl obj con_desc
         let null_off = fromIntegral sz + fromIntegral (BS.length con_desc)
         poke (castPtr wr_ptr `plusPtr` null_off) (0 :: Word8)
         _flushExec sz ex_ptr -- Cache flush (if needed)
+#if defined(RTS_LINKER_USE_MMAP)
         _markExec (sz + fromIntegral lcon_desc) ex_ptr
+#endif
 #if defined(TABLES_NEXT_TO_CODE)
         return (castPtrToFunPtr (ex_ptr `plusPtr` conInfoTableSizeB))
 #else
@@ -396,13 +398,10 @@ foreign import ccall unsafe "flushExec"
 
 foreign import ccall unsafe "allocateWrite"
   _allocateWrite :: CUInt -> IO (Ptr a)
-
+#if defined(RTS_LINKER_USE_MMAP)
 foreign import ccall unsafe "markExec"
   _markExec :: CUInt -> Ptr a -> IO ()
-
-foreign import ccall unsafe "freeWrite"
-  _freeWrite :: CUInt -> Ptr a -> IO ()
-
+#endif
 -- -----------------------------------------------------------------------------
 -- Constants and config
 
